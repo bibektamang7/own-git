@@ -6,16 +6,16 @@ import (
 	"strings"
 )
 
-const ROOTDIR string = "/.owngit"
+const ROOTDIR string = "/.owngit/"
 
 var FILES = []string{
-	"HEAD",      // Current branch or commit
+	"HEAD", // Current branch or commit
 	"ORIG_HEAD", // Backup of previous state for undoing operations
 }
 var FOLDERS = []string{
 	"hooks", // Scripts triggered by Git events
 	"info",  // Local repo metadata (e.g. excludes)
-	"logs",  // History of reference changes (reflog)
+	"logs", // History of reference changes (reflog)
 }
 
 var ERROR_CHECK_FOLDER_EXISTS = fmt.Errorf("failed on checking existing folder")
@@ -48,6 +48,23 @@ func checkGitFolderExists(path string) (string, bool, error) {
 	return "", false, nil
 }
 
+func InitializeFoldersAndFiles(path string) error {
+	// create root .owngit folder
+	fullPath := path + ROOTDIR
+
+	for _, folder := range FOLDERS {
+		if err := os.MkdirAll(fullPath+folder, os.ModePerm); err != nil {
+			return err
+		}
+	}
+	for _, file := range FILES {
+		if _, err := os.Create(fullPath + file); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func InitializeGit() error {
 	path, err := os.Getwd()
 	if err != nil {
@@ -64,8 +81,5 @@ func InitializeGit() error {
 		return nil
 	}
 	fmt.Println("Initializing Git... ")
-	// create root .owngit folder
-	fullPath := path + ROOTDIR
-	err = os.Mkdir(fullPath, os.ModePerm)
-	return err
+	return InitializeFoldersAndFiles(path)
 }
