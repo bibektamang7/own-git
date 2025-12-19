@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 const ROOTDIR string = "/.owngit"
@@ -17,8 +18,34 @@ var FOLDERS = []string{
 	"logs",  // History of reference changes (reflog)
 }
 
-func checkExists() (bool, error){
-	return false, nil
+var ERROR_CHECK_FOLDER_EXISTS = fmt.Errorf("failed on checking existing folder")
+
+func checkGitFolderExists(path string) (string, bool, error) {
+	if path == "" {
+		return "", false, ERROR_CHECK_FOLDER_EXISTS
+	}
+	parts := strings.Split(path, "/")
+	numParts := len(parts)
+	if numParts < 1 {
+		return "", false, ERROR_CHECK_FOLDER_EXISTS
+	}
+	for i := numParts; i >= 0; i-- {
+		// could improve : That's for later
+		currentPath := strings.Join(parts[:i], "/")
+		folder := currentPath + ROOTDIR
+		f, err := os.Stat(folder)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return "", false, err
+		}
+		if f.IsDir() {
+			return currentPath, true, nil
+		}
+	}
+
+	return "", false, nil
 }
 
 func InitializeGit() error {
@@ -26,10 +53,19 @@ func InitializeGit() error {
 	if err != nil {
 		return err
 	}
+	existPath, ok, err := checkGitFolderExists(path)
+	if err != nil {
+		return err
+	}
+	if ok {
+		// TODO:
+		// handle reinitializing git
+		fmt.Println("Reinitializing Git to ", existPath)
+		return nil
+	}
+	fmt.Println("Initializing Git... ")
 	// create root .owngit folder
 	fullPath := path + ROOTDIR
 	err = os.Mkdir(fullPath, os.ModePerm)
-	fmt.Println("check: ", path)
-	fmt.Println("foldre created" , fullPath)
-	return err 
+	return err
 }
