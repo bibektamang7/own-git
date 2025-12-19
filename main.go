@@ -24,7 +24,10 @@ func main() {
 
 	switch commands[0] {
 	case INIT:
-		fmt.Println("git init command")
+		if err := InitializeGit(); err != nil {
+			log.Fatal("ERROR: ", err)
+		}
+		fmt.Println("Initialized Git Successfully")
 	case STATUS:
 		fmt.Println("git status command")
 	case COMMIT:
