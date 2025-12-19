@@ -8,14 +8,25 @@ import (
 
 const ROOTDIR string = "/.owngit/"
 
+var DEFAULT_CONFIGS = map[string]string{
+	"filemode":        "false",
+	"bare":            "false",
+	"localrefupdates": "true",
+}
+
 var FILES = []string{
-	"HEAD", // Current branch or commit
+	"HEAD",      // Current branch or commit
 	"ORIG_HEAD", // Backup of previous state for undoing operations
+	"index",     // fast lookup
+	"config",    // local git config
 }
 var FOLDERS = []string{
-	"hooks", // Scripts triggered by Git events
-	"info",  // Local repo metadata (e.g. excludes)
-	"logs", // History of reference changes (reflog)
+	"hooks",   // Scripts triggered by Git events
+	"info",    // Local repo metadata (e.g. excludes)
+	"logs",    // History of reference changes (reflog)
+	"objects", // commits hash
+	"refs/heads",
+	// "refs/remotes", // add only when remote is set
 }
 
 var ERROR_CHECK_FOLDER_EXISTS = fmt.Errorf("failed on checking existing folder")
@@ -50,15 +61,16 @@ func checkGitFolderExists(path string) (string, bool, error) {
 
 func InitializeFoldersAndFiles(path string) error {
 	// create root .owngit folder
-	fullPath := path + ROOTDIR
 
 	for _, folder := range FOLDERS {
-		if err := os.MkdirAll(fullPath+folder, os.ModePerm); err != nil {
+		if err := os.MkdirAll(path+folder, os.ModePerm); err != nil {
 			return err
 		}
 	}
 	for _, file := range FILES {
-		if _, err := os.Create(fullPath + file); err != nil {
+		// TODO: if file == "config" -> initialize default config
+		// i.e INI file with default key-value
+		if _, err := os.Create(path + file); err != nil {
 			return err
 		}
 	}
@@ -80,6 +92,12 @@ func InitializeGit() error {
 		fmt.Println("Reinitializing Git to ", existPath)
 		return nil
 	}
-	fmt.Println("Initializing Git... ")
-	return InitializeFoldersAndFiles(path)
+
+	fullPath := path + ROOTDIR
+	if err := InitializeFoldersAndFiles(fullPath); err != nil {
+		return err
+	}
+
+	fmt.Println("Initialized empty Git repository in ", fullPath)
+	return nil
 }
