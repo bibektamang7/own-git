@@ -68,11 +68,16 @@ func InitializeFoldersAndFiles(path string) error {
 		}
 	}
 	for _, file := range FILES {
-		// TODO: if file == "config" -> initialize default config
-		// i.e INI file with default key-value
-		if _, err := os.Create(path + file); err != nil {
+		fi, err := os.Create(path + file)
+		if err != nil {
 			return err
 		}
+		defer fi.Close()
+		if file == "config" {
+			// here to do
+			// return ini.WriteKeyValueINI(fi, DEFAULT_CONFIGS, "core")
+		}
+
 	}
 	return nil
 }
