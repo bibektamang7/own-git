@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+
+	"github.com/bibektamang7/own-git/snapshots"
 )
 
 const (
@@ -14,24 +16,27 @@ const (
 )
 
 func main() {
-	commands := os.Args[1:]
-	if len(commands) < 1 {
+	// commands := os.Args[1:]
+	if len(os.Args[1:]) < 1 {
 		log.Fatal("commands required")
 	}
-	if commands[0] == "" {
+	if os.Args[1] == "" {
 		log.Fatal("empty command")
 	}
 
-	switch commands[0] {
+	switch os.Args[1] {
 	case INIT:
 		if err := InitializeGit(); err != nil {
 			log.Fatal("ERROR: ", err)
 		}
 		fmt.Println("Initialized Git Successfully")
 	case STATUS:
-		fmt.Println("git status command")
+		fmt.Println("Git status command")
 	case COMMIT:
-		fmt.Println("git commit command")
+		if err := snapshots.HandleCommitCommand(); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Commit Staged files")
 	case LOG:
 		fmt.Println("git log command")
 	default:
