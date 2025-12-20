@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/bibektamang7/own-git/ini"
 )
 
-const ROOTDIR string = "/.owngit/"
+const ROOTDIR string = ".owngit/"
 
-var DEFAULT_CONFIGS = map[string]string{
-	"filemode":        "false",
-	"bare":            "false",
-	"localrefupdates": "true",
+var DEFAULTCONFIGS = []string{
+	"core.filemode=false",
+	"core.bare=false",
+	"core.localrefupdates=true",
 }
 
 var FILES = []string{
@@ -74,8 +76,19 @@ func InitializeFoldersAndFiles(path string) error {
 		}
 		defer fi.Close()
 		if file == "config" {
-			// here to do
-			// return ini.WriteKeyValueINI(fi, DEFAULT_CONFIGS, "core")
+			fINI := ini.NewFileINI()
+			for _, config := range DEFAULTCONFIGS {
+				parts := strings.SplitN(config, "=", 2)
+				if len(parts) != 2 {
+					continue
+				}
+				segments := strings.SplitN(parts[0], ".", 2)
+				if len(segments) != 2 {
+					continue
+				}
+				fINI.Add(segments[0], segments[1], parts[1])
+			}
+			return fINI.Write(fi)
 		}
 
 	}
@@ -98,6 +111,7 @@ func InitializeGit() error {
 		return nil
 	}
 
+	fmt.Println("path :", path)
 	fullPath := path + ROOTDIR
 	if err := InitializeFoldersAndFiles(fullPath); err != nil {
 		return err

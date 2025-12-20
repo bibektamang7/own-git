@@ -281,6 +281,5 @@ func (fi *FileINI) Write(w io.Writer) error {
 			return err
 		}
 	}
-	
-	return nil
+	return bufWriter.Flush()
 }
