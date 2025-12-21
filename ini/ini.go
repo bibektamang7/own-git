@@ -70,6 +70,7 @@ func (fi *FileINI) ParseINIFile(r io.Reader) error {
 		lines = append(lines, l)
 
 	}
+	fi.lines = lines
 	return nil
 }
 
@@ -160,9 +161,9 @@ func (fi *FileINI) Unset(section, key string) bool {
 			count++
 			idx = i
 			if count > 1 {
-				slog.Warn(fmt.Sprintf("%s.%s has multiple values", section, key))
-				slog.Error("Cannot overwrite multiple values with a single value")
-				slog.Info("Use a regexp, --add or --replace-all to change user.name")
+				slog.Warn(fmt.Sprintf("%s.%s has multiple keys", section, key))
+				slog.Error("Cannot unset multiple keys with a single key")
+				slog.Info("Use a regexp, --unset-all to unset the key")
 				return false
 			}
 		}
