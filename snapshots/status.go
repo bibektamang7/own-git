@@ -5,9 +5,6 @@ import (
 	"os"
 )
 
-
-
-
 type Status struct {
 	UntractedFiles []string
 	ModifiedFiles  []string
@@ -43,7 +40,7 @@ func HandleStatusCommand() error {
 	if err != nil {
 		return err
 	}
-	fullPath, ok, err := CheckGitFolderExists(path)
+	_, ok, err := CheckGitFolderExists(path)
 	if err != nil {
 		return err
 	}

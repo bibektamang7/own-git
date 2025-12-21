@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +14,7 @@ import (
 type IndexLine struct {
 	Fullpath   string
 	BlobHash   string
-	FileMode   os.FileMode 
+	FileMode   os.FileMode
 	FileSize   int64
 	TimeStamps time.Time // For now, still not sure
 }
@@ -42,7 +43,6 @@ func (s *Staged) parseIndexFile(path string) error {
 		return err
 	}
 	stat, err := fi.Stat()
-	stat.Mode()
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func (s *Staged) parseIndexFile(path string) error {
 		idxLine.BlobHash = parts[1]
 		idxLine.FileMode = fileMode
 		idxLine.FileSize = fileSize
-		idxLine.TimeStamps = timestamp 
+		idxLine.TimeStamps = timestamp
 
 		s.addIndexLine(*idxLine)
 
@@ -81,8 +81,31 @@ func (s *Staged) parseIndexFile(path string) error {
 	return nil
 }
 
-func (s *Staged) visitWorkingDirFiles(basePath string) error{
+func (s *Staged) visitWorkingDirFilesAndCompare(basePath string) error {
+	stack := []string{basePath}
 
+	for len(stack) > 0 {
+		currentDir := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		entries, err := os.ReadDir(currentDir)
+		if err != nil {
+			return err
+		}
+
+		for _, entry := range entries {
+			path := filepath.Join(currentDir, entry.Name())
+
+			if entry.IsDir() {
+				if entry.Name() == ".git" || entry.Name() == ".owngit" {
+					continue
+				}
+				stack = append(stack, path)
+			} else {
+				fmt.Println("Processing file:", path)
+			}
+		}
+	}
 	return nil
 }
 
@@ -110,7 +133,9 @@ func HandleAddCommand() error {
 		if err := s.parseIndexFile(fullpath + ROOTDIR); err != nil {
 			return err
 		}
-		// TODO: NOW VISIT EACH FOLDER AND THEIR FILES TO CHECK
+		if err := s.visitWorkingDirFilesAndCompare(path); err != nil {
+			return err
+		}
 
 	} else {
 
