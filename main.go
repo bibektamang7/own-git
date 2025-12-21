@@ -12,6 +12,7 @@ const (
 	INIT   string = "init"
 	STATUS string = "status"
 	COMMIT string = "commit"
+	ADD    string = "add"
 	LOG    string = "log"
 )
 
@@ -26,17 +27,25 @@ func main() {
 
 	switch os.Args[1] {
 	case INIT:
-		if err := InitializeGit(); err != nil {
-			log.Fatal("ERROR: ", err)
+		if err := snapshots.InitializeGit(); err != nil {
+			log.Fatal("INIT COMMAND ERROR: ", err)
 		}
 		fmt.Println("Initialized Git Successfully")
 	case STATUS:
+		if err := snapshots.HandleStatusCommand(); err != nil {
+			log.Fatal("STATUS COMMAND ERROR: ", err)
+		}
 		fmt.Println("Git status command")
 	case COMMIT:
 		if err := snapshots.HandleCommitCommand(); err != nil {
 			log.Fatal(err)
 		}
 		fmt.Println("Commit Staged files")
+	case ADD:
+		if err := snapshots.HandleAddCommand(); err != nil {
+			log.Fatal("ADD COMMAND ERROR: ", err)
+		}
+		fmt.Println("Git add command")
 	case LOG:
 		fmt.Println("git log command")
 	default:

@@ -1,5 +1,13 @@
 package snapshots
 
+import (
+	"fmt"
+	"os"
+)
+
+
+
+
 type Status struct {
 	UntractedFiles []string
 	ModifiedFiles  []string
@@ -7,7 +15,7 @@ type Status struct {
 	DeletedFiles   []string
 }
 
-func (s *Status) NewStatus() *Status {
+func NewStatus() *Status {
 	return &Status{
 		UntractedFiles: []string{},
 		ModifiedFiles:  []string{},
@@ -26,6 +34,28 @@ func (s *Status) NewStatus() *Status {
 		6: then StagedFiles | trackedFiles
 */
 
-func (s *Status) HandleStatusCommand() error {
+func (s *Status) checkIndexFile() error {
+	return nil
+}
+func HandleStatusCommand() error {
+
+	path, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	fullPath, ok, err := CheckGitFolderExists(path)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("couldn't found .owngit folder")
+	}
+
+	status := NewStatus()
+	status.checkIndexFile()
+
+	if err := status.checkIndexFile(); err != nil {
+		return err
+	}
 	return nil
 }

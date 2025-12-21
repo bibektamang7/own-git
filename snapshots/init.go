@@ -1,4 +1,4 @@
-package main
+package snapshots 
 
 import (
 	"fmt"
@@ -33,7 +33,7 @@ var FOLDERS = []string{
 
 var ERROR_CHECK_FOLDER_EXISTS = fmt.Errorf("failed on checking existing folder")
 
-func checkGitFolderExists(path string) (string, bool, error) {
+func CheckGitFolderExists(path string) (string, bool, error) {
 	if path == "" {
 		return "", false, ERROR_CHECK_FOLDER_EXISTS
 	}
@@ -100,7 +100,7 @@ func InitializeGit() error {
 	if err != nil {
 		return err
 	}
-	existPath, ok, err := checkGitFolderExists(path)
+	existPath, ok, err := CheckGitFolderExists(path)
 	if err != nil {
 		return err
 	}
