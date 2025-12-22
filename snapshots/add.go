@@ -98,17 +98,16 @@ func (s *Staged) parseIndexFile(path string) error {
 	return nil
 }
 
-func (s *Staged) addFileInfoInIndexLines(path string, entry os.DirEntry, currentIdx int) error {
-
+func getIndexLine(path string, entry os.DirEntry) (IndexLine, error) {
 	fi, err := os.Open(path)
 	if err != nil {
-		return err
+		return IndexLine{}, err
 	}
 	defer fi.Close()
 
 	info, err := entry.Info()
 	if err != nil {
-		return err
+		return IndexLine{}, err
 	}
 	h := sha1.New()
 	header := fmt.Sprintf("blob %d\x00", info.Size())
@@ -126,30 +125,37 @@ func (s *Staged) addFileInfoInIndexLines(path string, entry os.DirEntry, current
 		TimeStamps: info.ModTime().UnixNano(),
 		BlobHash:   fileHash,
 	}
+	return idxLine, nil
 
-	s.addIndexLine(idxLine)
-
-	return nil
 }
 
-func (s *Staged) compareAndAddToIndex(path string, entry os.DirEntry, currentIdx int) error {
-	return nil
-}
+func (s *Staged) addFileInfoInIndexLines(path string, entry os.DirEntry, currentIdx int) error {
 
-func (s *Staged) visitWorkingDirFilesAndCompare(basePath string) error {
-	stack := []string{basePath}
-	isComparable := len(s.IndexLines) > 0
-	if isComparable {
-		for _, line := range s.IndexLines {
-			fmt.Printf("%s\t%s\t%o\t%d\t%d\n",
-				line.Fullpath,
-				line.BlobHash,
-				line.FileMode,
-				line.FileSize,
-				line.TimeStamps,
-			)
-		}
+	if currentIdx >= len(s.IndexLines) {
+		return fmt.Errorf("invalid current index")
 	}
+	idxLine, err := getIndexLine(path, entry)
+	if err != nil {
+		return err
+	}
+
+	s.IndexLines[currentIdx] = idxLine
+	return nil
+}
+
+func (s *Staged) compareAndAddToIndex(path string, entry os.DirEntry, currentIdx *int) error {
+	if *currentIdx >= len(s.IndexLines) {
+		return nil // for now
+	}
+
+	return nil
+}
+
+func (s *Staged) visitWorkingDirFiles(basePath string) error {
+	stack := []string{basePath}
+	idxIndexLinesCount := 0
+	idxIndexLinesSize := len(s.IndexLines)
+	isComparable := idxIndexLinesSize > 0
 	for len(stack) > 0 {
 		currentDir := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -169,11 +175,43 @@ func (s *Staged) visitWorkingDirFilesAndCompare(basePath string) error {
 				stack = append(stack, path)
 			} else {
 				if isComparable {
+					if idxIndexLinesCount + 1 >= len(s.IndexLines) {
+						isComparable = false
+					}
+					for i := idxIndexLinesCount; i < len(s.IndexLines); i++ {
+						if s.IndexLines[i].Fullpath == path {
+							info, err := entry.Info()
+							if err != nil {
+								return err
+							}
+							if s.IndexLines[i].FileSize != info.Size() && s.IndexLines[i].TimeStamps != info.ModTime().UnixNano() {
+								idxLine, err := getIndexLine(path, entry)
+								if err != nil {
+									return err
+								}
+								if s.IndexLines[i].BlobHash != idxLine.BlobHash {
+									s.IndexLines[i] = idxLine
+								}
+							}
+						} else if s.IndexLines[i].Fullpath < path {
+							//FILE DELETED CASE
+							if strings.HasSuffix(s.IndexLines[i].Fullpath, currentDir+entry.Name()) {
+								s.addFileInfoInIndexLines(path, entry, idxIndexLinesCount)
+							}
+						} else if path < s.IndexLines[i].Fullpath {
+							// NEW FILE
+							idxLine, err := getIndexLine(path, entry)
+							if err != nil {
+								return err
+							}
+							s.IndexLines = append(s.IndexLines[:i], append([]IndexLine{idxLine}, s.IndexLines[i:]...)...)
+						}
 
+						idxIndexLinesCount++
+					}
 				} else {
 					s.addFileInfoInIndexLines(path, entry, 0)
 				}
-				fmt.Println("Processing file:", path)
 			}
 		}
 	}
@@ -227,11 +265,10 @@ func HandleAddCommand() error {
 	}
 	s := NewStaged()
 	if os.Args[2] == "." {
-		fmt.Println("every files")
 		if err := s.parseIndexFile(fullpath + ROOTDIR + "index"); err != nil {
 			return err
 		}
-		if err := s.visitWorkingDirFilesAndCompare(path); err != nil {
+		if err := s.visitWorkingDirFiles(path); err != nil {
 			return err
 		}
 
