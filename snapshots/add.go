@@ -41,29 +41,16 @@ func (s *Staged) addIndexLine(indexLine IndexLine) {
 
 func getGitMode(mode os.FileMode) uint32 {
 	if mode.IsDir() {
-		return 040000 // Git directory mode
+		return 040000
 	}
-	// Check if any execute bit is set
 	if mode&0111 != 0 {
-		return 100755 // Git executable
+		return 100755
 	}
-	return 100644 // Git regular file
+	return 100644
 }
 
-func (s *Staged) parseIndexFile(path string) error {
-	fi, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	stat, err := fi.Stat()
-	if err != nil {
-		return err
-	}
-	if stat.Size() < 1 {
-		// TODO: I THINK, I'm messing something here
-		return nil
-	}
-	scanner := bufio.NewScanner(fi)
+func (s *Staged) scanAndAddIndexLines(r io.Reader) error {
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		text := scanner.Text()
 		line := strings.TrimSpace(text)
@@ -78,8 +65,7 @@ func (s *Staged) parseIndexFile(path string) error {
 		timestamp, err := strconv.ParseInt(parts[4], 10, 64)
 
 		if err != nil {
-			fmt.Println("here comes", err)
-			continue
+			return err
 		}
 
 		fileMode := os.FileMode(fileModeParsedValue)
@@ -93,6 +79,17 @@ func (s *Staged) parseIndexFile(path string) error {
 
 		s.addIndexLine(idxLine)
 
+	}
+	return nil
+}
+
+func (s *Staged) parseIndexFile(path string) error {
+	fi, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	if err := s.scanAndAddIndexLines(fi); err != nil {
+		return err
 	}
 	fmt.Println("length of parse index file: ", len(s.IndexLines))
 	return nil
@@ -130,8 +127,8 @@ func getIndexLine(path string, entry os.DirEntry) (IndexLine, error) {
 }
 
 func (s *Staged) addFileInfoInIndexLines(path string, entry os.DirEntry, currentIdx int) error {
-
 	if currentIdx >= len(s.IndexLines) {
+		fmt.Println("hello")
 		return fmt.Errorf("invalid current index")
 	}
 	idxLine, err := getIndexLine(path, entry)
@@ -140,14 +137,6 @@ func (s *Staged) addFileInfoInIndexLines(path string, entry os.DirEntry, current
 	}
 
 	s.IndexLines[currentIdx] = idxLine
-	return nil
-}
-
-func (s *Staged) compareAndAddToIndex(path string, entry os.DirEntry, currentIdx *int) error {
-	if *currentIdx >= len(s.IndexLines) {
-		return nil // for now
-	}
-
 	return nil
 }
 
@@ -175,16 +164,21 @@ func (s *Staged) visitWorkingDirFiles(basePath string) error {
 				stack = append(stack, path)
 			} else {
 				if isComparable {
-					if idxIndexLinesCount + 1 >= len(s.IndexLines) {
+					if idxIndexLinesCount+1 >= len(s.IndexLines) {
 						isComparable = false
 					}
+				outer:
 					for i := idxIndexLinesCount; i < len(s.IndexLines); i++ {
+						fmt.Println("fullpath: ", s.IndexLines[i].Fullpath)
+						fmt.Println("path: ", path)
 						if s.IndexLines[i].Fullpath == path {
+							fmt.Println("how many time equal: ")
 							info, err := entry.Info()
 							if err != nil {
 								return err
 							}
 							if s.IndexLines[i].FileSize != info.Size() && s.IndexLines[i].TimeStamps != info.ModTime().UnixNano() {
+								fmt.Println("does it change")
 								idxLine, err := getIndexLine(path, entry)
 								if err != nil {
 									return err
@@ -193,28 +187,49 @@ func (s *Staged) visitWorkingDirFiles(basePath string) error {
 									s.IndexLines[i] = idxLine
 								}
 							}
-						} else if s.IndexLines[i].Fullpath < path {
+							idxIndexLinesCount++
+							break outer
+
+						} else if s.IndexLines[i].Fullpath < path && len(s.IndexLines[i].Fullpath) <= len(path) {
+							fmt.Println("how many time less than path: ")
 							//FILE DELETED CASE
 							if strings.HasSuffix(s.IndexLines[i].Fullpath, currentDir+entry.Name()) {
-								s.addFileInfoInIndexLines(path, entry, idxIndexLinesCount)
+								// s.addFileInfoInIndexLines(path, entry, idxIndexLinesCount)
+								fmt.Println("is it here when not to")
+								continue
 							}
-						} else if path < s.IndexLines[i].Fullpath {
+						} else {
+							if len(s.IndexLines[i].Fullpath) < len(path) {
+								continue
+							}
+							fmt.Println("how many time greater than path: ")
 							// NEW FILE
 							idxLine, err := getIndexLine(path, entry)
 							if err != nil {
 								return err
 							}
 							s.IndexLines = append(s.IndexLines[:i], append([]IndexLine{idxLine}, s.IndexLines[i:]...)...)
+							idxIndexLinesCount++
+							break outer
 						}
 
+						if idxIndexLinesCount == 4 {
+							panic("let's see")
+						}
 						idxIndexLinesCount++
 					}
 				} else {
-					s.addFileInfoInIndexLines(path, entry, 0)
+					idxLine, err := getIndexLine(path, entry)
+					if err != nil {
+						return err
+					}
+					s.IndexLines = append(s.IndexLines, idxLine)
+					idxIndexLinesCount++
 				}
 			}
 		}
 	}
+	s.IndexLines = s.IndexLines[:idxIndexLinesCount]
 	return nil
 }
 
@@ -257,11 +272,12 @@ func HandleAddCommand() error {
 		return err
 	}
 	fullpath, ok, err := CheckGitFolderExists(path)
+	fmt.Println("full path in handle command:  ", fullpath)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("couldn't found index file")
+		return fmt.Errorf("couldn't found index file %v", err)
 	}
 	s := NewStaged()
 	if os.Args[2] == "." {

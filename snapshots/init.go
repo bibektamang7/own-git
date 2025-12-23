@@ -1,4 +1,4 @@
-package snapshots 
+package snapshots
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"github.com/bibektamang7/own-git/ini"
 )
 
-const ROOTDIR string = ".owngit/"
+const ROOTDIR string = "/.owngit/"
 
 var DEFAULTCONFIGS = []string{
 	"core.filemode=false",
@@ -37,6 +37,7 @@ func CheckGitFolderExists(path string) (string, bool, error) {
 	if path == "" {
 		return "", false, ERROR_CHECK_FOLDER_EXISTS
 	}
+	fmt.Println("thi sis request path: ", path)
 	parts := strings.Split(path, "/")
 	numParts := len(parts)
 	if numParts < 1 {
@@ -46,6 +47,7 @@ func CheckGitFolderExists(path string) (string, bool, error) {
 		// could improve : That's for later
 		currentPath := strings.Join(parts[:i], "/")
 		folder := currentPath + ROOTDIR
+		fmt.Println("this is folder:", folder)
 		f, err := os.Stat(folder)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -57,7 +59,6 @@ func CheckGitFolderExists(path string) (string, bool, error) {
 			return currentPath, true, nil
 		}
 	}
-
 	return "", false, nil
 }
 
