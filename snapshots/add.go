@@ -154,7 +154,7 @@ func (s *Staged) visitWorkingDirFiles(basePath string) error {
 			return err
 		}
 
-		for _, entry := range entries {
+		for k, entry := range entries {
 			path := filepath.Join(currentDir, entry.Name())
 
 			if entry.IsDir() {
@@ -167,6 +167,7 @@ func (s *Staged) visitWorkingDirFiles(basePath string) error {
 					if idxIndexLinesCount+1 >= len(s.IndexLines) {
 						isComparable = false
 					}
+					isHandled := false
 				outer:
 					for i := idxIndexLinesCount; i < len(s.IndexLines); i++ {
 						fmt.Println("fullpath: ", s.IndexLines[i].Fullpath)
@@ -187,6 +188,7 @@ func (s *Staged) visitWorkingDirFiles(basePath string) error {
 									s.IndexLines[i] = idxLine
 								}
 							}
+							isHandled = true
 							idxIndexLinesCount++
 							break outer
 
@@ -209,13 +211,22 @@ func (s *Staged) visitWorkingDirFiles(basePath string) error {
 								return err
 							}
 							s.IndexLines = append(s.IndexLines[:i], append([]IndexLine{idxLine}, s.IndexLines[i:]...)...)
+							isHandled = true
 							idxIndexLinesCount++
 							break outer
 						}
 
-						if idxIndexLinesCount == 4 {
-							panic("let's see")
+						idxIndexLinesCount++
+					}
+
+					if k == len(entries)-1 && !isHandled {
+						idxLine, err := getIndexLine(path, entry)
+						if err != nil {
+							return err
 						}
+						fmt.Println("im here")
+						s.IndexLines = append(s.IndexLines, idxLine)
+						fmt.Println("what the value here: ", idxIndexLinesCount)
 						idxIndexLinesCount++
 					}
 				} else {
@@ -229,7 +240,8 @@ func (s *Staged) visitWorkingDirFiles(basePath string) error {
 			}
 		}
 	}
-	s.IndexLines = s.IndexLines[:idxIndexLinesCount]
+	fmt.Println("numver of lines:", idxIndexLinesCount, len(s.IndexLines))
+	s.IndexLines = s.IndexLines[:]
 	return nil
 }
 

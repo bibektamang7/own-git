@@ -37,7 +37,6 @@ func CheckGitFolderExists(path string) (string, bool, error) {
 	if path == "" {
 		return "", false, ERROR_CHECK_FOLDER_EXISTS
 	}
-	fmt.Println("thi sis request path: ", path)
 	parts := strings.Split(path, "/")
 	numParts := len(parts)
 	if numParts < 1 {
@@ -47,7 +46,6 @@ func CheckGitFolderExists(path string) (string, bool, error) {
 		// could improve : That's for later
 		currentPath := strings.Join(parts[:i], "/")
 		folder := currentPath + ROOTDIR
-		fmt.Println("this is folder:", folder)
 		f, err := os.Stat(folder)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -112,7 +110,6 @@ func InitializeGit() error {
 		return nil
 	}
 
-	fmt.Println("path :", path)
 	fullPath := path + ROOTDIR
 	if err := InitializeFoldersAndFiles(fullPath); err != nil {
 		return err
