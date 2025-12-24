@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -27,21 +28,20 @@ func NewIndexLine() *IndexLine {
 
 type Staged struct {
 	IndexLines []IndexLine
+	indexMap   map[string]int
+	seen       map[string]bool
 }
 
 func NewStaged() *Staged {
 	return &Staged{
 		IndexLines: []IndexLine{},
+		indexMap:   make(map[string]int),
+		seen:       make(map[string]bool),
 	}
 }
-
-func (s *Staged) addIndexLine(indexLine IndexLine) {
-	s.IndexLines = append(s.IndexLines, indexLine)
-}
-
 func getGitMode(mode os.FileMode) uint32 {
-	if mode.IsDir() {
-		return 040000
+	if mode&os.ModeSymlink != 0 {
+		return 120000
 	}
 	if mode&0111 != 0 {
 		return 100755
@@ -49,227 +49,188 @@ func getGitMode(mode os.FileMode) uint32 {
 	return 100644
 }
 
-func (s *Staged) scanAndAddIndexLines(r io.Reader) error {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		text := scanner.Text()
-		line := strings.TrimSpace(text)
-		parts := strings.SplitN(line, "\t", 5)
-		fmt.Println("lenght of line: ", len(parts))
-		if len(parts) != 5 {
-			continue
-		}
-
-		fileModeParsedValue, err := strconv.ParseUint(parts[2], 0, 32)
-		fileSize, err := strconv.ParseInt(parts[3], 10, 64)
-		timestamp, err := strconv.ParseInt(parts[4], 10, 64)
-
-		if err != nil {
-			return err
-		}
-
-		fileMode := os.FileMode(fileModeParsedValue)
-		idxLine := IndexLine{
-			Fullpath:   parts[0],
-			BlobHash:   parts[1],
-			FileMode:   getGitMode(fileMode),
-			FileSize:   fileSize,
-			TimeStamps: timestamp,
-		}
-
-		s.addIndexLine(idxLine)
-
-	}
-	return nil
-}
-
-func (s *Staged) parseIndexFile(path string) error {
-	fi, err := os.Open(path)
+func hashFile(path string, info os.FileInfo) (string, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if err := s.scanAndAddIndexLines(fi); err != nil {
-		return err
-	}
-	fmt.Println("length of parse index file: ", len(s.IndexLines))
-	return nil
-}
+	defer f.Close()
 
-func getIndexLine(path string, entry os.DirEntry) (IndexLine, error) {
-	fi, err := os.Open(path)
-	if err != nil {
-		return IndexLine{}, err
-	}
-	defer fi.Close()
-
-	info, err := entry.Info()
-	if err != nil {
-		return IndexLine{}, err
-	}
 	h := sha1.New()
 	header := fmt.Sprintf("blob %d\x00", info.Size())
 	h.Write([]byte(header))
 
-	io.Copy(h, fi)
-	fileHash := hex.EncodeToString(h.Sum(nil))
-
-	fmt.Println("the hash: ", fileHash)
-
-	idxLine := IndexLine{
-		Fullpath:   path,
-		FileMode:   getGitMode(info.Mode()),
-		FileSize:   info.Size(),
-		TimeStamps: info.ModTime().UnixNano(),
-		BlobHash:   fileHash,
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
 	}
-	return idxLine, nil
 
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func (s *Staged) addFileInfoInIndexLines(path string, entry os.DirEntry, currentIdx int) error {
-	if currentIdx >= len(s.IndexLines) {
-		fmt.Println("hello")
-		return fmt.Errorf("invalid current index")
-	}
-	idxLine, err := getIndexLine(path, entry)
+func (s *Staged) parseIndexFile(path string) error {
+	f, err := os.Open(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
+	defer f.Close()
 
-	s.IndexLines[currentIdx] = idxLine
-	return nil
-}
+	reader := bufio.NewReader(f)
 
-func (s *Staged) visitWorkingDirFiles(basePath string) error {
-	stack := []string{basePath}
-	idxIndexLinesCount := 0
-	idxIndexLinesSize := len(s.IndexLines)
-	isComparable := idxIndexLinesSize > 0
-	for len(stack) > 0 {
-		currentDir := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-
-		entries, err := os.ReadDir(currentDir)
+	for {
+		line, err := reader.ReadString('\n')
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
 			return err
 		}
 
-		for k, entry := range entries {
-			path := filepath.Join(currentDir, entry.Name())
-
-			if entry.IsDir() {
-				if entry.Name() == ".git" || entry.Name() == ".owngit" {
-					continue
-				}
-				stack = append(stack, path)
-			} else {
-				if isComparable {
-					if idxIndexLinesCount+1 >= len(s.IndexLines) {
-						isComparable = false
-					}
-					isHandled := false
-				outer:
-					for i := idxIndexLinesCount; i < len(s.IndexLines); i++ {
-						fmt.Println("fullpath: ", s.IndexLines[i].Fullpath)
-						fmt.Println("path: ", path)
-						if s.IndexLines[i].Fullpath == path {
-							fmt.Println("how many time equal: ")
-							info, err := entry.Info()
-							if err != nil {
-								return err
-							}
-							if s.IndexLines[i].FileSize != info.Size() && s.IndexLines[i].TimeStamps != info.ModTime().UnixNano() {
-								fmt.Println("does it change")
-								idxLine, err := getIndexLine(path, entry)
-								if err != nil {
-									return err
-								}
-								if s.IndexLines[i].BlobHash != idxLine.BlobHash {
-									s.IndexLines[i] = idxLine
-								}
-							}
-							isHandled = true
-							idxIndexLinesCount++
-							break outer
-
-						} else if s.IndexLines[i].Fullpath < path && len(s.IndexLines[i].Fullpath) <= len(path) {
-							fmt.Println("how many time less than path: ")
-							//FILE DELETED CASE
-							if strings.HasSuffix(s.IndexLines[i].Fullpath, currentDir+entry.Name()) {
-								// s.addFileInfoInIndexLines(path, entry, idxIndexLinesCount)
-								fmt.Println("is it here when not to")
-								continue
-							}
-						} else {
-							if len(s.IndexLines[i].Fullpath) < len(path) {
-								continue
-							}
-							fmt.Println("how many time greater than path: ")
-							// NEW FILE
-							idxLine, err := getIndexLine(path, entry)
-							if err != nil {
-								return err
-							}
-							s.IndexLines = append(s.IndexLines[:i], append([]IndexLine{idxLine}, s.IndexLines[i:]...)...)
-							isHandled = true
-							idxIndexLinesCount++
-							break outer
-						}
-
-						idxIndexLinesCount++
-					}
-
-					if k == len(entries)-1 && !isHandled {
-						idxLine, err := getIndexLine(path, entry)
-						if err != nil {
-							return err
-						}
-						fmt.Println("im here")
-						s.IndexLines = append(s.IndexLines, idxLine)
-						fmt.Println("what the value here: ", idxIndexLinesCount)
-						idxIndexLinesCount++
-					}
-				} else {
-					idxLine, err := getIndexLine(path, entry)
-					if err != nil {
-						return err
-					}
-					s.IndexLines = append(s.IndexLines, idxLine)
-					idxIndexLinesCount++
-				}
-			}
+		line = strings.TrimSpace(line)
+		parts := strings.SplitN(line, "\t", 5)
+		if len(parts) != 5 {
+			return fmt.Errorf("corrupt index line: %q", line)
 		}
+
+		mode, err := strconv.ParseUint(parts[2], 8, 32)
+		if err != nil {
+			return err
+		}
+		size, err := strconv.ParseInt(parts[3], 10, 64)
+		if err != nil {
+			return err
+		}
+		ts, err := strconv.ParseInt(parts[4], 10, 64)
+		if err != nil {
+			return err
+		}
+
+		idx := IndexLine{
+			Fullpath:   parts[0],
+			BlobHash:   parts[1],
+			FileMode:   uint32(mode),
+			FileSize:   size,
+			TimeStamps: ts,
+		}
+
+		s.indexMap[idx.Fullpath] = len(s.IndexLines)
+		s.IndexLines = append(s.IndexLines, idx)
 	}
-	fmt.Println("numver of lines:", idxIndexLinesCount, len(s.IndexLines))
-	s.IndexLines = s.IndexLines[:]
+
 	return nil
 }
+func (s *Staged) visitWorkingDirFiles(repoRoot string) error {
+	return filepath.WalkDir(repoRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 
-func (s *Staged) addIndexLineToIndexFile(path string) error {
-	lockIndex := "index.lock"
+		if d.IsDir() {
+			if d.Name() == ".git" || d.Name() == ".owngit" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 
-	fi, err := os.Create(path + lockIndex)
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(repoRoot, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+
+		s.seen[rel] = true
+
+		if idx, ok := s.indexMap[rel]; ok {
+			old := s.IndexLines[idx]
+
+			if old.FileSize != info.Size() ||
+				old.TimeStamps != info.ModTime().UnixNano() {
+
+				hash, err := hashFile(path, info)
+				if err != nil {
+					return err
+				}
+
+				if hash != old.BlobHash {
+					s.IndexLines[idx] = IndexLine{
+						Fullpath:   rel,
+						BlobHash:   hash,
+						FileMode:   getGitMode(info.Mode()),
+						FileSize:   info.Size(),
+						TimeStamps: info.ModTime().UnixNano(),
+					}
+				}
+			}
+			return nil
+		}
+
+		// New file
+		hash, err := hashFile(path, info)
+		if err != nil {
+			return err
+		}
+
+		s.indexMap[rel] = len(s.IndexLines)
+		s.IndexLines = append(s.IndexLines, IndexLine{
+			Fullpath:   rel,
+			BlobHash:   hash,
+			FileMode:   getGitMode(info.Mode()),
+			FileSize:   info.Size(),
+			TimeStamps: info.ModTime().UnixNano(),
+		})
+
+		return nil
+	})
+}
+func (s *Staged) removeDeleted() {
+	filtered := s.IndexLines[:0]
+	for _, line := range s.IndexLines {
+		if s.seen[line.Fullpath] {
+			filtered = append(filtered, line)
+		}
+	}
+	s.IndexLines = filtered
+}
+func (s *Staged) writeIndex(path string) error {
+	sort.Slice(s.IndexLines, func(i, j int) bool {
+		return s.IndexLines[i].Fullpath < s.IndexLines[j].Fullpath
+	})
+
+	lock := path + "index.lock"
+	f, err := os.Create(lock)
 	if err != nil {
 		return err
 	}
-	defer fi.Close()
-	bufWriter := bufio.NewWriter(fi)
 
+	w := bufio.NewWriter(f)
 	for _, line := range s.IndexLines {
-
-		fmt.Fprintf(bufWriter, fmt.Sprintf("%s\t%s\t%o\t%d\t%d\n",
+		fmt.Fprintf(w, "%s\t%s\t%o\t%d\t%d\n",
 			line.Fullpath,
 			line.BlobHash,
 			line.FileMode,
 			line.FileSize,
 			line.TimeStamps,
-		))
+		)
 	}
-	if err := bufWriter.Flush(); err != nil {
+
+	if err := w.Flush(); err != nil {
+		f.Close()
 		return err
 	}
-	fi.Close()
-	return os.Rename(path+lockIndex, path+"index")
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	f.Close()
+
+	return os.Rename(lock, path+"index")
 }
 
 func HandleAddCommand() error {
@@ -284,7 +245,6 @@ func HandleAddCommand() error {
 		return err
 	}
 	fullpath, ok, err := CheckGitFolderExists(path)
-	fmt.Println("full path in handle command:  ", fullpath)
 	if err != nil {
 		return err
 	}
@@ -304,8 +264,5 @@ func HandleAddCommand() error {
 
 		fmt.Println("for now, nothing")
 	}
-	if err := s.addIndexLineToIndexFile(fullpath + ROOTDIR); err != nil {
-		return err
-	}
-	return nil
+	return s.writeIndex(fullpath + ROOTDIR)
 }
