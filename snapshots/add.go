@@ -30,7 +30,8 @@ type Staged struct {
 	IndexLines []IndexLine
 	indexMap   map[string]int
 	seen       map[string]bool
-	root       string
+	currentDir string
+	baseRoot   string
 }
 
 func NewStaged() *Staged {
@@ -38,7 +39,8 @@ func NewStaged() *Staged {
 		IndexLines: []IndexLine{},
 		indexMap:   make(map[string]int),
 		seen:       make(map[string]bool),
-		root:       "",
+		currentDir: "",
+		baseRoot:   "",
 	}
 }
 func getGitMode(mode os.FileMode) uint32 {
@@ -146,9 +148,8 @@ func (s *Staged) visitWorkingDirFiles(repoRoot string) error {
 			return err
 		}
 		// rel = filepath.ToSlash(rel)
-		if s.root != "." && s.root != " " && len(s.root) > 0 {
-			fmt.Println("i;m here")
-			rel = s.root + "/" + rel
+		if s.currentDir != "." && s.currentDir != " " && len(s.currentDir) > 0 {
+			rel = s.currentDir + "/" + rel
 		}
 
 		s.seen[rel] = true
@@ -200,7 +201,7 @@ func (s *Staged) removeDeleted() {
 	filtered := s.IndexLines[:0]
 
 	for _, line := range s.IndexLines {
-		if s.root != "" && !strings.HasPrefix(line.Fullpath, s.root+"/") && line.Fullpath != s.root {
+		if s.currentDir != "" && !strings.HasPrefix(line.Fullpath, s.currentDir+"/") && line.Fullpath != s.currentDir {
 			filtered = append(filtered, line)
 			continue
 		}
@@ -258,6 +259,35 @@ func (s *Staged) writeIndex(path string) error {
 	return os.Rename(lock, path+"index")
 }
 
+func (s *Staged) addSpecificFiles(path string) error {
+
+	convertedPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	currentRelPath, err := filepath.Rel(s.baseRoot, convertedPath)
+	if err != nil {
+		return err
+	}
+	fmt.Println("current rel path: ", currentRelPath)
+	if strings.HasPrefix(currentRelPath, "..") {
+		return fmt.Errorf("%s is outside repository at %s\n", currentRelPath, s.baseRoot)
+	}
+	fi, err := os.Open(convertedPath)
+	if err != nil {
+		return err
+	}
+	defer fi.Close()
+	if err != nil {
+		return err
+	}
+	if line, ok := s.indexMap[currentRelPath]; ok {
+		fmt.Println("the line : ", line, "the is rel : ", currentRelPath)
+		return nil
+	}
+	return nil
+}
+
 func HandleAddCommand() error {
 	if len(os.Args[2:]) < 1 {
 		slog.Info("hint: Maybe you wanted to say 'git add .'?")
@@ -278,23 +308,26 @@ func HandleAddCommand() error {
 	}
 	s := NewStaged()
 
+	s.baseRoot = fullpath
 	root, err := getAddRoot(fullpath, path)
 	if err != nil {
 		return err
 	}
-	s.root = root
-	fmt.Println("root :", s.root)
+	s.currentDir = root
+	if err := s.parseIndexFile(fullpath + ROOTDIR + "index"); err != nil {
+		return err
+	}
 	if os.Args[2] == "." {
-		if err := s.parseIndexFile(fullpath + ROOTDIR + "index"); err != nil {
-			return err
-		}
 		if err := s.visitWorkingDirFiles(path); err != nil {
 			return err
 		}
-
+		s.removeDeleted()
 	} else {
-		fmt.Println("for now, nothing")
+		for _, p := range os.Args[2:] {
+			if err := s.addSpecificFiles(p); err != nil {
+				return err
+			}
+		}
 	}
-	s.removeDeleted()
 	return s.writeIndex(fullpath + ROOTDIR)
 }
