@@ -30,6 +30,7 @@ type Staged struct {
 	IndexLines []IndexLine
 	indexMap   map[string]int
 	seen       map[string]bool
+	root       string
 }
 
 func NewStaged() *Staged {
@@ -37,6 +38,7 @@ func NewStaged() *Staged {
 		IndexLines: []IndexLine{},
 		indexMap:   make(map[string]int),
 		seen:       make(map[string]bool),
+		root:       "",
 	}
 }
 func getGitMode(mode os.FileMode) uint32 {
@@ -143,7 +145,11 @@ func (s *Staged) visitWorkingDirFiles(repoRoot string) error {
 		if err != nil {
 			return err
 		}
-		rel = filepath.ToSlash(rel)
+		// rel = filepath.ToSlash(rel)
+		if s.root != "." && s.root != " " && len(s.root) > 0 {
+			fmt.Println("i;m here")
+			rel = s.root + "/" + rel
+		}
 
 		s.seen[rel] = true
 
@@ -189,15 +195,34 @@ func (s *Staged) visitWorkingDirFiles(repoRoot string) error {
 		return nil
 	})
 }
+
 func (s *Staged) removeDeleted() {
 	filtered := s.IndexLines[:0]
+
 	for _, line := range s.IndexLines {
+		if s.root != "" && !strings.HasPrefix(line.Fullpath, s.root+"/") && line.Fullpath != s.root {
+			filtered = append(filtered, line)
+			continue
+		}
 		if s.seen[line.Fullpath] {
 			filtered = append(filtered, line)
 		}
 	}
 	s.IndexLines = filtered
 }
+
+func getAddRoot(repoRoot, cwd string) (string, error) {
+	rel, err := filepath.Rel(repoRoot, cwd)
+	if err != nil {
+		return "", err
+	}
+	if rel == "." {
+		return "", nil
+	}
+	return filepath.ToSlash(rel), nil
+
+}
+
 func (s *Staged) writeIndex(path string) error {
 	sort.Slice(s.IndexLines, func(i, j int) bool {
 		return s.IndexLines[i].Fullpath < s.IndexLines[j].Fullpath
@@ -252,6 +277,13 @@ func HandleAddCommand() error {
 		return fmt.Errorf("couldn't found index file %v", err)
 	}
 	s := NewStaged()
+
+	root, err := getAddRoot(fullpath, path)
+	if err != nil {
+		return err
+	}
+	s.root = root
+	fmt.Println("root :", s.root)
 	if os.Args[2] == "." {
 		if err := s.parseIndexFile(fullpath + ROOTDIR + "index"); err != nil {
 			return err
@@ -261,8 +293,8 @@ func HandleAddCommand() error {
 		}
 
 	} else {
-
 		fmt.Println("for now, nothing")
 	}
+	s.removeDeleted()
 	return s.writeIndex(fullpath + ROOTDIR)
 }
