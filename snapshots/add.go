@@ -71,7 +71,8 @@ func hashFile(path string, info os.FileInfo) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func (s *Staged) parseIndexFile(path string) error {
+func (s *Staged) parseIndexFile() error {
+	path := s.baseRoot + ROOTDIR + "index"
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -143,15 +144,10 @@ func (s *Staged) visitWorkingDirFiles(repoRoot string) error {
 			return err
 		}
 
-		rel, err := filepath.Rel(repoRoot, path)
+		rel, err := filepath.Rel(s.baseRoot, path)
 		if err != nil {
 			return err
 		}
-		// rel = filepath.ToSlash(rel)
-		if s.currentDir != "." && s.currentDir != " " && len(s.currentDir) > 0 {
-			rel = s.currentDir + "/" + rel
-		}
-
 		s.seen[rel] = true
 
 		if idx, ok := s.indexMap[rel]; ok {
@@ -314,7 +310,7 @@ func HandleAddCommand() error {
 		return err
 	}
 	s.currentDir = root
-	if err := s.parseIndexFile(fullpath + ROOTDIR + "index"); err != nil {
+	if err := s.parseIndexFile(); err != nil {
 		return err
 	}
 	if os.Args[2] == "." {
