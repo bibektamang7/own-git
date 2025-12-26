@@ -86,6 +86,7 @@ func (s *Status) parseIndexFile() error {
 
 	return nil
 }
+
 func (s *Status) visitWorkingDirFiles(repoRoot string) error {
 	return filepath.WalkDir(repoRoot, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -132,6 +133,40 @@ func (s *Status) deletedFiles() {
 			s.DeletedFiles = append(s.DeletedFiles, k)
 		}
 	}
+}
+
+func (s *Status) parseCommitFile(r io.Reader) error {
+	
+	return nil
+}
+
+func (s *Status) parseHeadFile(basePath string) error {
+	fi, err := os.Open(basePath + ROOTDIR + "HEAD")
+	if err != nil {
+		return err
+	}
+	defer fi.Close()
+
+	reader := bufio.NewReader(fi)
+
+	commitHash, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+
+	parts := strings.SplitN(commitHash, commitHash[:2], 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("malformed last commit hash")
+	}
+	commitFilePath := basePath + ROOTDIR + "objects/" + parts[0] + "/" + parts[1]
+	commitFile, err := os.Open(commitFilePath)
+	if err != nil {
+		return err
+	}
+	defer commitFile.Close()
+	s.parseCommitFile(commitFile)
+
+	return nil
 }
 
 func HandleStatusCommand() error {
