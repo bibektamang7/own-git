@@ -135,79 +135,6 @@ func (s *Status) deletedFiles() {
 	}
 }
 
-var ERROR_MALFORMED_TREE_FORMAT = fmt.Errorf("malformed tree format")
-
-func (s *Status) parseCommitFile(r io.Reader, basePath string) error {
-	treeReader := bufio.NewReader(r)
-
-	treeLine, err := treeReader.ReadString('\n')
-	if err != nil {
-		return err
-	}
-
-	treeParts := strings.SplitN(treeLine, " ", 2)
-	if len(treeParts) != 2 {
-		return ERROR_MALFORMED_COMMIT_FORMAT
-	}
-	if treeParts[0] != "tree" {
-		return ERROR_MALFORMED_COMMIT_FORMAT
-	}
-	treeHash := treeParts[1]
-	treeHashParts := strings.SplitN(treeHash, treeHash[:2], 2)
-	if len(treeHashParts) != 2 {
-		return ERROR_MALFORMED_COMMIT_FORMAT
-	}
-	treeHashFilePath := basePath + ROOTDIR + "objects/" + treeHashParts[0] + "/" + treeHashParts[1]
-	treeHashFile, err := os.Open(treeHashFilePath)
-	if err != nil {
-		return err
-	}
-	defer treeHashFile.Close()
-
-	treePaths := NewTreePaths()
-	if err := treePaths.parseTreeFile(treeHashFile, basePath, ""); err != nil {
-		return err
-	}
-
-	for k, _ := range s.IndexMap {
-		if _, ok := treePaths.TreePaths[k]; !ok {
-			s.StagedFiles = append(s.StagedFiles, k)
-		}
-	}
-	return nil
-}
-
-var ERROR_MALFORMED_COMMIT_FORMAT = fmt.Errorf("malformed commit format")
-
-func (s *Status) parseHeadFile(basePath string) error {
-	fi, err := os.Open(basePath + ROOTDIR + "HEAD")
-	if err != nil {
-		return err
-	}
-	defer fi.Close()
-
-	reader := bufio.NewReader(fi)
-
-	commitHash, err := reader.ReadString('\n')
-	if err != nil {
-		return err
-	}
-
-	parts := strings.SplitN(commitHash, commitHash[:2], 2)
-	if len(parts) != 2 {
-		return ERROR_MALFORMED_COMMIT_FORMAT
-	}
-	commitFilePath := basePath + ROOTDIR + "objects/" + parts[0] + "/" + parts[1]
-	commitFile, err := os.Open(commitFilePath)
-	if err != nil {
-		return err
-	}
-	defer commitFile.Close()
-	s.parseCommitFile(commitFile, basePath)
-
-	return nil
-}
-
 func HandleStatusCommand() error {
 	path, err := os.Getwd()
 	if err != nil {
@@ -230,6 +157,16 @@ func HandleStatusCommand() error {
 		return err
 	}
 	status.deletedFiles()
+	treePaths, err := ParseHeadFile(fullpath)
+	if err != nil {
+		return err
+	}
+
+	for k, _ := range status.IndexMap {
+		if _, ok := treePaths.TreePaths[k]; !ok {
+			status.StagedFiles = append(status.StagedFiles, k)
+		}
+	}
 
 	fmt.Println("On branch main")
 

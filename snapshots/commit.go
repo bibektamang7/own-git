@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -36,8 +37,13 @@ type TreePaths struct {
 	TreePaths map[string]string
 }
 
-func NewTreePaths() *TreePaths {
-	return &TreePaths{
+var (
+	ERROR_MALFORMED_TREE_FORMAT   = fmt.Errorf("malformed tree format")
+	ERROR_MALFORMED_COMMIT_FORMAT = fmt.Errorf("malformed commit format")
+)
+
+func NewTreePaths() TreePaths {
+	return TreePaths{
 		TreePaths: make(map[string]string),
 	}
 }
@@ -58,20 +64,23 @@ func (t *TreePaths) parseTreeFile(r io.Reader, gitRoot, treePath string) error {
 		}
 		filePath := treePath + parts[3]
 		if parts[1] == "tree" {
-			treeHash := parts[1]
-			treeHashParts := strings.SplitN(treeHash, treeHash[:2], 2)
+			treeHash := strings.TrimSpace(parts[1])
+			treeHashParts := []string{treeHash[:2], treeHash[2:]}
 			if len(treeHashParts) != 2 {
 				return ERROR_MALFORMED_COMMIT_FORMAT
 			}
-			treeHashFilePath := gitRoot + ROOTDIR + "objects/" + treeHashParts[0] + "/" + treeHashParts[1]
+			// treeHashFilePath := gitRoot + ROOTDIR + "objects/" + treeHashParts[0] + "/" + treeHashParts[1]
+			// TODO: IF IT WORKS THEN CHANGE OTHER TOO
+			treeHashFilePath := filepath.Join(gitRoot, ROOTDIR, "objects", treeHashParts[0], treeHashParts[1])
 			treeHashFile, err := os.Open(treeHashFilePath)
 			if err != nil {
 				return err
 			}
+
+			defer treeHashFile.Close()
 			if err := t.parseTreeFile(treeHashFile, gitRoot, filePath); err != nil {
 				return err
 			}
-			defer treeHashFile.Close()
 			continue
 		}
 
@@ -81,7 +90,75 @@ func (t *TreePaths) parseTreeFile(r io.Reader, gitRoot, treePath string) error {
 	}
 }
 
-func compareAndFindStagedFiles() error {
+func parseCommitFile(r io.Reader, basePath string) (TreePaths, error) {
+	treeReader := bufio.NewReader(r)
+
+	treeLine, err := treeReader.ReadString('\n')
+	if err != nil {
+		return TreePaths{}, err
+	}
+
+	treeParts := strings.SplitN(treeLine, " ", 2)
+	if len(treeParts) != 2 {
+		return TreePaths{}, ERROR_MALFORMED_COMMIT_FORMAT
+	}
+	if treeParts[0] != "tree" {
+		return TreePaths{}, ERROR_MALFORMED_COMMIT_FORMAT
+	}
+	treeHash := strings.TrimSpace(treeParts[1])
+	treeHashParts := []string{treeHash[:2], treeHash[2:]}
+	if len(treeHashParts) != 2 {
+		return TreePaths{}, ERROR_MALFORMED_COMMIT_FORMAT
+	}
+	treeHashFilePath := basePath + ROOTDIR + "objects/" + treeHashParts[0] + "/" + treeHashParts[1]
+	treeHashFile, err := os.Open(treeHashFilePath)
+	if err != nil {
+		return TreePaths{}, err
+	}
+	defer treeHashFile.Close()
+
+	treePaths := NewTreePaths()
+	if err := treePaths.parseTreeFile(treeHashFile, basePath, ""); err != nil {
+		return TreePaths{}, err
+	}
+	return treePaths, nil
+}
+
+func ParseHeadFile(basePath string) (TreePaths, error) {
+	fi, err := os.Open(basePath + ROOTDIR + "HEAD")
+	if err != nil {
+		return TreePaths{}, err
+	}
+	defer fi.Close()
+
+	reader := bufio.NewReader(fi)
+
+	commitHash, err := reader.ReadString('\n')
+	if err != nil {
+		return TreePaths{}, err
+	}
+
+	commitTrimHash := strings.TrimSpace(commitHash)
+	parts := []string{commitTrimHash[:2], commitTrimHash[2:]}
+	if len(parts) != 2 {
+		return TreePaths{}, ERROR_MALFORMED_COMMIT_FORMAT
+	}
+	commitFilePath := basePath + ROOTDIR + "objects/" + parts[0] + "/" + parts[1]
+	commitFile, err := os.Open(commitFilePath)
+	if err != nil {
+		return TreePaths{}, err
+	}
+	defer commitFile.Close()
+	return parseCommitFile(commitFile, basePath)
+}
+
+func compareAndFindStagedFiles(gitRootPath string) error {
+	status := NewStatus()
+	status.baseRoot = gitRootPath
+	if err := status.parseIndexFile(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
