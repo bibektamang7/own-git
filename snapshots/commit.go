@@ -1,10 +1,13 @@
 package snapshots
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"strings"
 )
 
 type ContentType string
@@ -15,8 +18,8 @@ const (
 )
 
 type CommitTree struct {
-	contentType ContentType
 	fileMode    os.FileMode
+	contentType ContentType
 	Hash        string
 	Name        string
 }
@@ -27,6 +30,55 @@ type Commit struct {
 	author   []string
 	commiter []string
 	message  string
+}
+
+type TreePaths struct {
+	TreePaths map[string]string
+}
+
+func NewTreePaths() *TreePaths {
+	return &TreePaths{
+		TreePaths: make(map[string]string),
+	}
+}
+
+func (t *TreePaths) parseTreeFile(r io.Reader, gitRoot, treePath string) error {
+	reader := bufio.NewReader(r)
+	for {
+		line, err := reader.ReadString('\n')
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		parts := strings.SplitN(line, "\t", 4)
+		if len(parts) != 4 {
+			return ERROR_MALFORMED_TREE_FORMAT
+		}
+		filePath := treePath + parts[3]
+		if parts[1] == "tree" {
+			treeHash := parts[1]
+			treeHashParts := strings.SplitN(treeHash, treeHash[:2], 2)
+			if len(treeHashParts) != 2 {
+				return ERROR_MALFORMED_COMMIT_FORMAT
+			}
+			treeHashFilePath := gitRoot + ROOTDIR + "objects/" + treeHashParts[0] + "/" + treeHashParts[1]
+			treeHashFile, err := os.Open(treeHashFilePath)
+			if err != nil {
+				return err
+			}
+			if err := t.parseTreeFile(treeHashFile, gitRoot, filePath); err != nil {
+				return err
+			}
+			defer treeHashFile.Close()
+			continue
+		}
+
+		// assigning blob to tree path, which is useful
+		// when comparing with index lines
+		t.TreePaths[filePath] = parts[2]
+	}
 }
 
 func compareAndFindStagedFiles() error {
