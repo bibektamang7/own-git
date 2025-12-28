@@ -256,7 +256,6 @@ func (s *Staged) writeIndex(path string) error {
 }
 
 func (s *Staged) addSpecificFiles(path string) error {
-
 	convertedPath, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -265,7 +264,6 @@ func (s *Staged) addSpecificFiles(path string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("current rel path: ", currentRelPath)
 	if strings.HasPrefix(currentRelPath, "..") {
 		return fmt.Errorf("%s is outside repository at %s\n", currentRelPath, s.baseRoot)
 	}
@@ -274,9 +272,6 @@ func (s *Staged) addSpecificFiles(path string) error {
 		return err
 	}
 	defer fi.Close()
-	if err != nil {
-		return err
-	}
 	if line, ok := s.indexMap[currentRelPath]; ok {
 		fmt.Println("the line : ", line, "the is rel : ", currentRelPath)
 		return nil
