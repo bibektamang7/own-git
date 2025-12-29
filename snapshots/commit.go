@@ -11,7 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type ContentType string
@@ -292,10 +294,10 @@ func buildTreesFromIndex(
 		treeHashes[dir] = treeHash
 	}
 
-	return treeHashes[""], nil 
+	return treeHashes[""], nil
 }
 
-func compareAndFindStagedFiles(gitRootPath string) error {
+func compareAndFindStagedFiles(gitRootPath, message string) error {
 	staged := NewStaged()
 
 	staged.baseRoot = gitRootPath
@@ -303,7 +305,20 @@ func compareAndFindStagedFiles(gitRootPath string) error {
 		return err
 	}
 	treePaths, err := ParseHeadFile(gitRootPath)
+	if err == io.EOF {
+		treeHash, err := buildTreesFromIndex(gitRootPath, staged.IndexLines)
+		if err != nil {
+			return err
+		}
+		commitHash, err := writeCommit(gitRootPath, treeHash, treeHash, message)
+		if err != nil {
+			return err
+		}
+
+		return updateHEAD(gitRootPath, commitHash)
+	}
 	if err != nil {
+		fmt.Println("eof error")
 		return err
 	}
 	changed := false
@@ -341,7 +356,74 @@ func compareAndFindStagedFiles(gitRootPath string) error {
 	if err != nil {
 		return err
 	}
-	return nil
+	commitHash, err := writeCommit(gitRootPath, treeHash, treeHash, message)
+	if err != nil {
+		return err
+	}
+
+	return updateHEAD(gitRootPath, commitHash)
+}
+func writeCommit(
+	gitRoot string,
+	treeHash string,
+	parentHash string,
+	message string,
+) (string, error) {
+
+	now := time.Now()
+	timestamp := strconv.FormatInt(now.Unix(), 10)
+	timezone := now.Format("-0700")
+
+	var buf strings.Builder
+
+	// tree is mandatory
+	buf.WriteString("tree ")
+	buf.WriteString(treeHash)
+	buf.WriteByte('\n')
+
+	// parent is optional (first commit)
+	if parentHash != "" {
+		buf.WriteString("parent ")
+		buf.WriteString(parentHash)
+		buf.WriteByte('\n')
+	}
+
+	// author
+	buf.WriteString("author ")
+	buf.WriteString("Your Name <you@example.com> ")
+	buf.WriteString(timestamp)
+	buf.WriteByte(' ')
+	buf.WriteString(timezone)
+	buf.WriteByte('\n')
+
+	// committer
+	buf.WriteString("committer ")
+	buf.WriteString("Your Name <you@example.com> ")
+	buf.WriteString(timestamp)
+	buf.WriteByte(' ')
+	buf.WriteString(timezone)
+	buf.WriteString("\n\n")
+
+	// commit message
+	buf.WriteString(message)
+	buf.WriteByte('\n')
+
+	content := buf.String()
+
+	header := fmt.Sprintf("commit %d\x00", len(content))
+	hash := hashBytes([]byte(header + content))
+
+	objPath := objectPath(gitRoot, hash)
+	if err := writeObject(objPath, content); err != nil {
+		return "", err
+	}
+
+	return hash, nil
+}
+
+func updateHEAD(gitRoot string, commitHash string) error {
+	headPath := filepath.Join(gitRoot, ROOTDIR, "HEAD")
+	return os.WriteFile(headPath, []byte(commitHash+"\n"), 0644)
 }
 
 func HandleCommitCommand() error {
@@ -365,12 +447,16 @@ func HandleCommitCommand() error {
 
 	fmt.Println("message: ", *msg)
 
-	_, ok, err := CheckGitFolderExists(path)
+	fullpath, ok, err := CheckGitFolderExists(path)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return fmt.Errorf("outside of Git repository")
+	}
+
+	if err := compareAndFindStagedFiles(fullpath, *msg); err != nil {
+		return err
 	}
 
 	return nil

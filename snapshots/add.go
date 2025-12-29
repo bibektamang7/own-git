@@ -14,6 +14,7 @@ import (
 	"strings"
 )
 
+// IndexLine represents each line from Index file
 type IndexLine struct {
 	Fullpath   string
 	BlobHash   string
