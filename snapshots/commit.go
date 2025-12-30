@@ -39,6 +39,7 @@ type Commit struct {
 }
 
 type TreePaths struct {
+	treeHash  string
 	TreePaths map[string]string
 }
 
@@ -94,41 +95,42 @@ func (t *TreePaths) parseTreeFile(r io.Reader, gitRoot, treePath string) error {
 	}
 }
 
-func parseCommitFile(r io.Reader, basePath string) (TreePaths, error) {
+func (tp *TreePaths) parseCommitFile(r io.Reader, basePath string) error {
 	treeReader := bufio.NewReader(r)
 
 	treeLine, err := treeReader.ReadString('\n')
 	if err != nil {
-		return TreePaths{}, err
+		return err
 	}
 
 	treeParts := strings.SplitN(treeLine, " ", 2)
 	if len(treeParts) != 2 {
-		return TreePaths{}, ERROR_MALFORMED_COMMIT_FORMAT
+		return ERROR_MALFORMED_COMMIT_FORMAT
 	}
 	if treeParts[0] != "tree" {
-		return TreePaths{}, ERROR_MALFORMED_COMMIT_FORMAT
+		return ERROR_MALFORMED_COMMIT_FORMAT
 	}
 	treeHash := strings.TrimSpace(treeParts[1])
 	treeHashParts := []string{treeHash[:2], treeHash[2:]}
 	if len(treeHashParts) != 2 {
-		return TreePaths{}, ERROR_MALFORMED_COMMIT_FORMAT
+		return ERROR_MALFORMED_COMMIT_FORMAT
 	}
+	tp.treeHash = treeHash
+
 	treeHashFilePath := basePath + ROOTDIR + "objects/" + treeHashParts[0] + "/" + treeHashParts[1]
 	treeHashFile, err := os.Open(treeHashFilePath)
 	if err != nil {
-		return TreePaths{}, err
+		return err
 	}
 	defer treeHashFile.Close()
 
-	treePaths := NewTreePaths()
-	if err := treePaths.parseTreeFile(treeHashFile, basePath, ""); err != nil {
-		return TreePaths{}, err
+	if err := tp.parseTreeFile(treeHashFile, basePath, ""); err != nil {
+		return err
 	}
-	return treePaths, nil
+	return nil
 }
 
-func ParseHeadFile(basePath string) (TreePaths, error) {
+func ParseHeadAndCommitFile(basePath string) (TreePaths, error) {
 	fi, err := os.Open(basePath + ROOTDIR + "HEAD")
 	if err != nil {
 		return TreePaths{}, err
@@ -153,31 +155,38 @@ func ParseHeadFile(basePath string) (TreePaths, error) {
 		return TreePaths{}, err
 	}
 	defer commitFile.Close()
-	return parseCommitFile(commitFile, basePath)
-}
 
-func groupIndexByDir(index []IndexLine) map[string][]IndexLine {
-	dirs := make(map[string][]IndexLine)
-
-	for _, line := range index {
-		dir := filepath.Dir(line.Fullpath)
-		dirs[dir] = append(dirs[dir], line)
+	treePaths := NewTreePaths()
+	if err := treePaths.parseCommitFile(commitFile, basePath); err != nil {
+		return TreePaths{}, err
 	}
-	return dirs
+	return treePaths, nil
 }
 
-func sortedDirsByDepth(dirs map[string][]IndexLine) []string {
-	keys := make([]string, 0, len(dirs))
-	for k := range dirs {
-		keys = append(keys, k)
-	}
-
-	sort.Slice(keys, func(i, j int) bool {
-		return strings.Count(keys[i], "/") > strings.Count(keys[j], "/")
-	})
-	fmt.Println("key after sort : ", keys)
-	return keys
-}
+//
+// func groupIndexByDir(index []IndexLine) map[string][]IndexLine {
+// 	dirs := make(map[string][]IndexLine)
+//
+// 	for _, line := range index {
+// 		dir := filepath.Dir(line.Fullpath)
+// 		dirs[dir] = append(dirs[dir], line)
+// 	}
+// 	return dirs
+// }
+//
+// func sortedDirsByDepth(dirs map[string][]IndexLine) []string {
+// 	keys := make([]string, 0, len(dirs))
+// 	for k := range dirs {
+// 		keys = append(keys, k)
+// 	}
+//
+// 	sort.Slice(keys, func(i, j int) bool {
+// 		return strings.Count(keys[i], "/") > strings.Count(keys[j], "/")
+// 	})
+// 	fmt.Println("key after sort : ", keys)
+// 	return keys
+// }
+//
 
 func writeTreeObject(
 	gitRoot string,
@@ -292,7 +301,7 @@ func buildTreesFromIndex(
 	// treeHashes := make(map[string]string)
 	//
 	// dirs := sortedDirsByDepth(dirMap)
-	
+
 	dirMap := make(map[string][]IndexLine)
 	for _, line := range index {
 		dirMap[filepath.Dir(line.Fullpath)] = append(dirMap[filepath.Dir(line.Fullpath)], line)
@@ -345,7 +354,7 @@ func compareAndFindStagedFiles(gitRootPath, message string) error {
 	if err := staged.parseIndexFile(); err != nil {
 		return err
 	}
-	treePaths, err := ParseHeadFile(gitRootPath)
+	treePaths, err := ParseHeadAndCommitFile(gitRootPath)
 	if err == io.EOF {
 		treeHash, err := buildTreesFromIndex(gitRootPath, staged.IndexLines)
 		if err != nil {
@@ -376,7 +385,6 @@ func compareAndFindStagedFiles(gitRootPath, message string) error {
 		}
 	}
 
-	// deleted files
 	if !changed {
 		for path := range treePaths.TreePaths {
 			if _, ok := staged.indexMap[path]; !ok {
@@ -392,11 +400,15 @@ func compareAndFindStagedFiles(gitRootPath, message string) error {
 		return nil
 	}
 
-	// TODO: NOW CREATE COMMIT FORMAT AND TREE
 	treeHash, err := buildTreesFromIndex(gitRootPath, staged.IndexLines)
 	if err != nil {
 		return err
 	}
+
+	if treeHash == treePaths.treeHash {
+		return nil
+	}
+
 	commitHash, err := writeCommit(gitRootPath, treeHash, treeHash, message)
 	if err != nil {
 		return err
