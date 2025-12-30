@@ -39,8 +39,9 @@ type Commit struct {
 }
 
 type TreePaths struct {
-	treeHash  string
-	TreePaths map[string]string
+	commitHash string
+	treeHash   string
+	TreePaths  map[string]string
 }
 
 var (
@@ -158,6 +159,7 @@ func ParseHeadAndCommitFile(basePath string) (TreePaths, error) {
 	defer commitFile.Close()
 
 	treePaths := NewTreePaths()
+	treePaths.commitHash = commitTrimHash
 	if err := treePaths.parseCommitFile(commitFile, basePath); err != nil {
 		return TreePaths{}, err
 	}
@@ -376,7 +378,7 @@ func compareAndFindStagedFiles(gitRootPath, message string) error {
 		if err != nil {
 			return err
 		}
-		commitHash, err := writeCommit(gitRootPath, treeHash, treeHash, message)
+		commitHash, err := writeCommit(gitRootPath, treeHash, "", message)
 		if err != nil {
 			return err
 		}
@@ -425,7 +427,7 @@ func compareAndFindStagedFiles(gitRootPath, message string) error {
 		return nil
 	}
 
-	commitHash, err := writeCommit(gitRootPath, treeHash, treeHash, message)
+	commitHash, err := writeCommit(gitRootPath, treeHash, treePaths.commitHash, message)
 	if err != nil {
 		return err
 	}

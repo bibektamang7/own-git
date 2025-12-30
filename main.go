@@ -9,11 +9,12 @@ import (
 )
 
 const (
-	INIT   string = "init"
-	STATUS string = "status"
-	COMMIT string = "commit"
-	ADD    string = "add"
-	LOG    string = "log"
+	INIT     string = "init"
+	STATUS   string = "status"
+	COMMIT   string = "commit"
+	ADD      string = "add"
+	LOG      string = "log"
+	CAT_FILE string = "cat-file"
 )
 
 func main() {
@@ -47,6 +48,11 @@ func main() {
 		fmt.Println("Git add command")
 	case LOG:
 		fmt.Println("git log command")
+	case CAT_FILE:
+		if err := snapshots.HandleCatFile(); err != nil {
+			log.Fatal("CAT FILE ERROR: ", err)
+		}
+		fmt.Println("git cat file command")
 	default:
 		log.Fatal("invalid command arguments")
 	}
