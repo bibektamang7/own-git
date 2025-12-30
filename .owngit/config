@@ -1,4 +1,0 @@
-[core]
-		localrefupdates = true
-		bare = false
-		filemode = false

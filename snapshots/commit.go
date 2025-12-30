@@ -74,8 +74,6 @@ func (t *TreePaths) parseTreeFile(r io.Reader, gitRoot, treePath string) error {
 			if len(treeHashParts) != 2 {
 				return ERROR_MALFORMED_COMMIT_FORMAT
 			}
-			// treeHashFilePath := gitRoot + ROOTDIR + "objects/" + treeHashParts[0] + "/" + treeHashParts[1]
-			// TODO: IF IT WORKS THEN CHANGE OTHER TOO
 			treeHashFilePath := filepath.Join(gitRoot, ROOTDIR, "objects", treeHashParts[0], treeHashParts[1])
 			treeHashFile, err := os.Open(treeHashFilePath)
 			if err != nil {
@@ -157,18 +155,17 @@ func ParseHeadFile(basePath string) (TreePaths, error) {
 	defer commitFile.Close()
 	return parseCommitFile(commitFile, basePath)
 }
+
 func groupIndexByDir(index []IndexLine) map[string][]IndexLine {
 	dirs := make(map[string][]IndexLine)
 
 	for _, line := range index {
 		dir := filepath.Dir(line.Fullpath)
-		if dir == "." {
-			dir = ""
-		}
 		dirs[dir] = append(dirs[dir], line)
 	}
 	return dirs
 }
+
 func sortedDirsByDepth(dirs map[string][]IndexLine) []string {
 	keys := make([]string, 0, len(dirs))
 	for k := range dirs {
@@ -178,8 +175,10 @@ func sortedDirsByDepth(dirs map[string][]IndexLine) []string {
 	sort.Slice(keys, func(i, j int) bool {
 		return strings.Count(keys[i], "/") > strings.Count(keys[j], "/")
 	})
+	fmt.Println("key after sort : ", keys)
 	return keys
 }
+
 func writeTreeObject(
 	gitRoot string,
 	entries []CommitTree,
@@ -210,6 +209,7 @@ func writeTreeObject(
 
 	return hash, nil
 }
+
 func writeObject(path string, content string) error {
 	dir := filepath.Dir(path)
 
@@ -251,20 +251,60 @@ func hashBytes(data []byte) string {
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))
 }
+func getAllDirs(index []IndexLine) []string {
+	dirSet := make(map[string]bool)
+	for _, line := range index {
+		dir := filepath.Dir(line.Fullpath)
+		// Traverse up to the root and add every parent directory
+		for {
+			dirSet[dir] = true
+			if dir == "." {
+				break
+			}
+			dir = filepath.Dir(dir)
+		}
+	}
+
+	var dirs []string
+	for d := range dirSet {
+		dirs = append(dirs, d)
+	}
+
+	// Sort by length descending to ensure deepest paths come first
+	// This ensures "a/b/c" is processed before "a/b", and "a/b" before "a"
+	sort.Slice(dirs, func(i, j int) bool {
+		// Count slashes first, then string length for precision
+		cI, cJ := strings.Count(dirs[i], "/"), strings.Count(dirs[j], "/")
+		if cI != cJ {
+			return cI > cJ
+		}
+		return len(dirs[i]) > len(dirs[j])
+	})
+	return dirs
+}
 
 func buildTreesFromIndex(
 	gitRoot string,
 	index []IndexLine,
 ) (string, error) {
-	dirMap := groupIndexByDir(index)
-	treeHashes := make(map[string]string)
 
-	dirs := sortedDirsByDepth(dirMap)
+	// dirMap := groupIndexByDir(index)
+	// treeHashes := make(map[string]string)
+	//
+	// dirs := sortedDirsByDepth(dirMap)
+	
+	dirMap := make(map[string][]IndexLine)
+	for _, line := range index {
+		dirMap[filepath.Dir(line.Fullpath)] = append(dirMap[filepath.Dir(line.Fullpath)], line)
+	}
+
+	// 2. Get all unique directories in bottom-up order
+	dirs := getAllDirs(index)
+	treeHashes := make(map[string]string)
 
 	for _, dir := range dirs {
 		var entries []CommitTree
 
-		// files in this directory
 		for _, line := range dirMap[dir] {
 			entries = append(entries, CommitTree{
 				fileMode:    fmt.Sprintf("%o", line.FileMode),
@@ -274,12 +314,13 @@ func buildTreesFromIndex(
 			})
 		}
 
-		// child trees
-		for childDir, childHash := range treeHashes {
-			if filepath.Dir(childDir) == dir {
+		// Add Trees (Sub-directories)
+		// We look through treeHashes to find dirs whose parent is the current dir
+		for childPath, childHash := range treeHashes {
+			if filepath.Dir(childPath) == dir && childPath != dir {
 				entries = append(entries, CommitTree{
 					fileMode:    "40000",
-					Name:        filepath.Base(childDir),
+					Name:        filepath.Base(childPath),
 					Hash:        childHash,
 					contentType: Tree,
 				})
@@ -294,7 +335,7 @@ func buildTreesFromIndex(
 		treeHashes[dir] = treeHash
 	}
 
-	return treeHashes[""], nil
+	return treeHashes["."], nil
 }
 
 func compareAndFindStagedFiles(gitRootPath, message string) error {
@@ -363,6 +404,7 @@ func compareAndFindStagedFiles(gitRootPath, message string) error {
 
 	return updateHEAD(gitRootPath, commitHash)
 }
+
 func writeCommit(
 	gitRoot string,
 	treeHash string,
