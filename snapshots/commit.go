@@ -64,11 +64,12 @@ func (t *TreePaths) parseTreeFile(r io.Reader, gitRoot, treePath string) error {
 		if err != nil {
 			return err
 		}
-		parts := strings.SplitN(line, "\t", 4)
+		trimLine := strings.TrimSuffix(line, "\n")
+		parts := strings.SplitN(trimLine, "\t", 4)
 		if len(parts) != 4 {
 			return ERROR_MALFORMED_TREE_FORMAT
 		}
-		filePath := treePath + parts[3]
+		filePath := filepath.Join(treePath, parts[3])
 		if parts[1] == "tree" {
 			treeHash := strings.TrimSpace(parts[2])
 			treeHashParts := []string{treeHash[:2], treeHash[2:]}
@@ -355,6 +356,21 @@ func compareAndFindStagedFiles(gitRootPath, message string) error {
 		return err
 	}
 	treePaths, err := ParseHeadAndCommitFile(gitRootPath)
+
+	stagedCount := 0
+	for k, _ := range staged.indexMap {
+		if _, ok := treePaths.TreePaths[k]; !ok {
+			stagedCount++
+		}
+	}
+	fmt.Println("count: ", stagedCount)
+	if stagedCount == 0 {
+		fmt.Println("On branch main")
+		fmt.Println("Your branch is up to date")
+		fmt.Println("Nothing to commit, working tree clean")
+		return nil
+	}
+
 	if err == io.EOF {
 		treeHash, err := buildTreesFromIndex(gitRootPath, staged.IndexLines)
 		if err != nil {
@@ -377,10 +393,10 @@ func compareAndFindStagedFiles(gitRootPath, message string) error {
 		idxLine := staged.IndexLines[idx]
 
 		if headHash, ok := treePaths.TreePaths[path]; !ok {
-			changed = true // new file
+			changed = true
 			break
 		} else if headHash != idxLine.BlobHash {
-			changed = true // modified
+			changed = true
 			break
 		}
 	}
@@ -498,8 +514,6 @@ func HandleCommitCommand() error {
 	if err != nil {
 		return err
 	}
-
-	fmt.Println("message: ", *msg)
 
 	fullpath, ok, err := CheckGitFolderExists(path)
 	if err != nil {

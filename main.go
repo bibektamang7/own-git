@@ -40,7 +40,6 @@ func main() {
 		if err := snapshots.HandleCommitCommand(); err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println("Commit Staged files")
 	case ADD:
 		if err := snapshots.HandleAddCommand(); err != nil {
 			log.Fatal("ADD COMMAND ERROR: ", err)
