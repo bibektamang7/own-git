@@ -11,7 +11,12 @@ import (
 
 var ERROR_OUTSIDE_GIT = fmt.Errorf("outside git repository")
 
-func logCommit(gitBasePath, commitHash string) error {
+type GitLog struct {
+	HeadCommitHash string
+	IsOneline      bool
+}
+
+func (gl *GitLog) logCommit(gitBasePath, commitHash string) error {
 	commitFilePath := filepath.Join(gitBasePath, ROOTDIR, "objects", commitHash[:2], commitHash[2:])
 	fi, err := os.Open(commitFilePath)
 	if err != nil {
@@ -36,44 +41,58 @@ func logCommit(gitBasePath, commitHash string) error {
 		}
 		commitLines = append(commitLines, line)
 	}
-	fmt.Printf("commit %s\n", commitHash)
-	hasParent := false
 
+	hasParent := false
 	authorIdx := 1
+
 	if strings.HasPrefix(commitLines[1], "parent") {
 		authorIdx = 2
 		hasParent = true
 	}
-	line := strings.TrimPrefix(commitLines[authorIdx], "author ")
-	lt := strings.Index(line, "<")
-	gt := strings.Index(line, ">")
+	if gl.IsOneline {
+		fmt.Printf("%s", commitHash[:7])
+		if commitHash == gl.HeadCommitHash {
+			fmt.Printf(" (HEAD -> main) ")
+		}
+		fmt.Println(commitLines[len(commitLines)-1])
+	} else {
+		line := strings.TrimPrefix(commitLines[authorIdx], "author ")
+		lt := strings.Index(line, "<")
+		gt := strings.Index(line, ">")
 
-	if lt == -1 || gt == -1 || gt < lt {
-		return fmt.Errorf("malformed commit file")
-	}
-	name := strings.TrimSpace(line[:lt])
-	email := line[lt+1 : gt]
+		if lt == -1 || gt == -1 || gt < lt {
+			return fmt.Errorf("malformed commit file")
+		}
+		name := strings.TrimSpace(line[:lt])
+		email := line[lt+1 : gt]
 
-	rest := strings.TrimSpace(line[gt+1:])
-	parts := strings.Split(rest, " ")
+		rest := strings.TrimSpace(line[gt+1:])
+		parts := strings.Split(rest, " ")
 
-	timestamp := parts[0]
-	timezone := parts[1]
+		timestamp := parts[0]
+		timezone := parts[1]
 
-	if !hasParent {
+		fmt.Printf("commit %s\n", commitHash)
+		if !hasParent {
+			fmt.Printf("Author: %s %s\n", name, email)
+			fmt.Println("Date:  ", timestamp, timezone)
+			fmt.Println(commitLines[3])
+			return nil
+		}
+
 		fmt.Printf("Author: %s %s\n", name, email)
 		fmt.Println("Date:  ", timestamp, timezone)
-		fmt.Println(commitLines[3])
-		return nil
+		fmt.Println(commitLines[4])
+
 	}
 
-	fmt.Printf("Author: %s %s\n", name, email)
-	fmt.Println("Date:  ", timestamp, timezone)
-	fmt.Println(commitLines[4])
+	if !hasParent {
+		return nil
+	}
 	// TODO: "\n" at the end of hash
 	parentParts := strings.Split(commitLines[1], " ")
 
-	return logCommit(gitBasePath, parentParts[1])
+	return gl.logCommit(gitBasePath, parentParts[1])
 
 }
 
@@ -94,7 +113,16 @@ func HandleLog() error {
 	if err != nil {
 		return err
 	}
-	if err := logCommit(filePath, commitHash); err != nil {
+	onelineArg := os.Args[2]
+	isOnlineArg := false
+	if onelineArg == "--oneline" {
+		isOnlineArg = true
+	}
+	gitLog := &GitLog{
+		IsOneline:      isOnlineArg,
+		HeadCommitHash: commitHash,
+	}
+	if err := gitLog.logCommit(filePath, commitHash); err != nil {
 		return err
 	}
 	return nil
