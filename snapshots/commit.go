@@ -475,7 +475,7 @@ func writeCommit(
 
 	// author
 	buf.WriteString("author ")
-	buf.WriteString("<Your Name> <you@example.com> ")
+	buf.WriteString("Your Name <you@example.com> ")
 	buf.WriteString(timestamp)
 	buf.WriteByte(' ')
 	buf.WriteString(timezone)
@@ -483,7 +483,7 @@ func writeCommit(
 
 	// committer
 	buf.WriteString("committer ")
-	buf.WriteString("<Your Name> <you@example.com> ")
+	buf.WriteString("Your Name <you@example.com> ")
 	buf.WriteString(timestamp)
 	buf.WriteByte(' ')
 	buf.WriteString(timezone)

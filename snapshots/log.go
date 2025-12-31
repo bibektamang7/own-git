@@ -39,24 +39,39 @@ func logCommit(gitBasePath, commitHash string) error {
 	fmt.Printf("commit %s\n", commitHash)
 	hasParent := false
 
-	parentParts := strings.Split(commitLines[1], " ")
-
-	if parentParts[0] == "parent" {
+	authorIdx := 1
+	if strings.HasPrefix(commitLines[1], "parent") {
+		authorIdx = 2
 		hasParent = true
 	}
+	line := strings.TrimPrefix(commitLines[authorIdx], "author ")
+	lt := strings.Index(line, "<")
+	gt := strings.Index(line, ">")
+
+	if lt == -1 || gt == -1 || gt < lt {
+		return fmt.Errorf("malformed commit file")
+	}
+	name := strings.TrimSpace(line[:lt])
+	email := line[lt+1 : gt]
+
+	rest := strings.TrimSpace(line[gt+1:])
+	parts := strings.Split(rest, " ")
+
+	timestamp := parts[0]
+	timezone := parts[1]
 
 	if !hasParent {
-		fmt.Printf("Author: %s %s", parentParts[1], parentParts[2])
-		fmt.Println("Date:  ", parentParts[3], parentParts[4])
+		fmt.Printf("Author: %s %s\n", name, email)
+		fmt.Println("Date:  ", timestamp, timezone)
 		fmt.Println(commitLines[3])
 		return nil
 	}
 
-	authorParts := strings.Split(commitLines[2], " ")
-
-	fmt.Printf("Author: %s %s", authorParts[1], authorParts[2])
-	fmt.Println("Date:  ", parentParts[3], parentParts[4])
+	fmt.Printf("Author: %s %s\n", name, email)
+	fmt.Println("Date:  ", timestamp, timezone)
 	fmt.Println(commitLines[4])
+	// TODO: "\n" at the end of hash
+	parentParts := strings.Split(commitLines[1], " ")
 
 	return logCommit(gitBasePath, parentParts[1])
 
