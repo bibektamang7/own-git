@@ -36,7 +36,6 @@ func main() {
 		if err := snapshots.HandleStatusCommand(); err != nil {
 			log.Fatal("STATUS COMMAND ERROR: ", err)
 		}
-		fmt.Println("Git status command")
 	case COMMIT:
 		if err := snapshots.HandleCommitCommand(); err != nil {
 			log.Fatal(err)
@@ -45,14 +44,14 @@ func main() {
 		if err := snapshots.HandleAddCommand(); err != nil {
 			log.Fatal("ADD COMMAND ERROR: ", err)
 		}
-		fmt.Println("Git add command")
 	case LOG:
-		fmt.Println("git log command")
+		if err := snapshots.HandleLog(); err != nil {
+			log.Fatal("LOG COMMAND ERROR: ", err)
+		}
 	case CAT_FILE:
 		if err := snapshots.HandleCatFile(); err != nil {
 			log.Fatal("CAT FILE ERROR: ", err)
 		}
-		fmt.Println("git cat file command")
 	default:
 		log.Fatal("invalid command arguments")
 	}

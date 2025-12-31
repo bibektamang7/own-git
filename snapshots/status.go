@@ -158,7 +158,7 @@ func HandleStatusCommand() error {
 	}
 	status.deletedFiles()
 	treePaths, err := ParseHeadAndCommitFile(fullpath)
-	if err != nil {
+	if err != io.EOF && err != nil {
 		return err
 	}
 

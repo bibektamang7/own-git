@@ -26,7 +26,6 @@ func HandleCatFile() error {
 	}
 
 	hashPath := filepath.Join(gitRootPath, ROOTDIR, "objects", hash[:2], hash[2:])
-
 	matches, err := filepath.Glob(fmt.Sprintf("%s*", hashPath))
 	if err != nil {
 		return err
@@ -42,8 +41,6 @@ func HandleCatFile() error {
 	defer fi.Close()
 
 	reader := bufio.NewReader(fi)
-
-	result := ""
 	for {
 		line, err := reader.ReadString('\n')
 		if err == io.EOF {
@@ -52,11 +49,8 @@ func HandleCatFile() error {
 		if err != nil {
 			return err
 		}
-		// TODO: FOR NOW
-		result += line
+		fmt.Printf("%s", line)
 
 	}
-
-	fmt.Println(result)
 	return nil
 }

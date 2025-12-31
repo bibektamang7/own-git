@@ -132,10 +132,10 @@ func (tp *TreePaths) parseCommitFile(r io.Reader, basePath string) error {
 	return nil
 }
 
-func ParseHeadAndCommitFile(basePath string) (TreePaths, error) {
-	fi, err := os.Open(basePath + ROOTDIR + "HEAD")
+func GetPreviousCommitHash(gitBasePath string) (string, error) {
+	fi, err := os.Open(gitBasePath + ROOTDIR + "HEAD")
 	if err != nil {
-		return TreePaths{}, err
+		return "", err
 	}
 	defer fi.Close()
 
@@ -143,10 +143,19 @@ func ParseHeadAndCommitFile(basePath string) (TreePaths, error) {
 
 	commitHash, err := reader.ReadString('\n')
 	if err != nil {
-		return TreePaths{}, err
+		return "", err
 	}
 
 	commitTrimHash := strings.TrimSpace(commitHash)
+	return commitTrimHash, nil
+}
+
+func ParseHeadAndCommitFile(basePath string) (TreePaths, error) {
+	commitTrimHash, err := GetPreviousCommitHash(basePath)
+	if err != nil {
+		return TreePaths{}, err
+	}
+
 	parts := []string{commitTrimHash[:2], commitTrimHash[2:]}
 	if len(parts) != 2 {
 		return TreePaths{}, ERROR_MALFORMED_COMMIT_FORMAT
@@ -263,6 +272,7 @@ func hashBytes(data []byte) string {
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))
 }
+
 func getAllDirs(index []IndexLine) []string {
 	dirSet := make(map[string]bool)
 	for _, line := range index {
@@ -358,6 +368,9 @@ func compareAndFindStagedFiles(gitRootPath, message string) error {
 		return err
 	}
 	treePaths, err := ParseHeadAndCommitFile(gitRootPath)
+	if err != io.EOF && err != nil {
+		return nil
+	}
 
 	stagedCount := 0
 	for k, _ := range staged.indexMap {
@@ -365,7 +378,7 @@ func compareAndFindStagedFiles(gitRootPath, message string) error {
 			stagedCount++
 		}
 	}
-	fmt.Println("count: ", stagedCount)
+
 	if stagedCount == 0 {
 		fmt.Println("On branch main")
 		fmt.Println("Your branch is up to date")
@@ -462,7 +475,7 @@ func writeCommit(
 
 	// author
 	buf.WriteString("author ")
-	buf.WriteString("Your Name <you@example.com> ")
+	buf.WriteString("<Your Name> <you@example.com> ")
 	buf.WriteString(timestamp)
 	buf.WriteByte(' ')
 	buf.WriteString(timezone)
@@ -470,7 +483,7 @@ func writeCommit(
 
 	// committer
 	buf.WriteString("committer ")
-	buf.WriteString("Your Name <you@example.com> ")
+	buf.WriteString("<Your Name> <you@example.com> ")
 	buf.WriteString(timestamp)
 	buf.WriteByte(' ')
 	buf.WriteString(timezone)
